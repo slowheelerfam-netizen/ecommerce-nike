@@ -36,7 +36,7 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "app/api/auth/guest-session/route.ts.DISABLED"  ],
   "exclude": [
     "node_modules"
   ]
