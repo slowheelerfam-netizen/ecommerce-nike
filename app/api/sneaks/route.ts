@@ -1,12 +1,14 @@
-export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
+import { NextResponse } from 'next/server';
 type SneaksProduct = any;
-// Import using require to avoid top-level side effects during module evaluation
+
 const SneaksAPI = require('sneaks-api');
 
 declare global {
-  // eslint-disable-next-line no-var
+
   var __sneaksInstance: any | undefined;
   var __sneaksCache: Map<string, { ts: number; data: any }>;
   var __SneaksCtor: any;
