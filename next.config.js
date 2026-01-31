@@ -3,10 +3,13 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   images: {
+    localPatterns: [
+      {
+        pathname: '/api/image',
+        search: '?url=*',
+      },
+    ],
     remotePatterns: [
       { protocol: 'https', hostname: 'stockx-assets.imgix.net' },
       { protocol: 'https', hostname: 'images.stockx.com' },
