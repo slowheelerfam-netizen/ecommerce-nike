@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type SneaksProduct = any;
-import SneaksAPI from 'sneaks-api';
+// Import using require to avoid top-level side effects during module evaluation
+const SneaksAPI = require('sneaks-api');
 
 declare global {
   // eslint-disable-next-line no-var
