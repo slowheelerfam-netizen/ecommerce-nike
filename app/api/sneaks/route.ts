@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 type SneaksProduct = any;
 import SneaksAPI from 'sneaks-api';
-const sneaks = new SneaksAPI();
 
 declare global {
   // eslint-disable-next-line no-var

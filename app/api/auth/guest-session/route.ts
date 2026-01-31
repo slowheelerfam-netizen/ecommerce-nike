@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createGuestSession } from '@/lib/auth/actions';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const sessionToken = await createGuestSession();
