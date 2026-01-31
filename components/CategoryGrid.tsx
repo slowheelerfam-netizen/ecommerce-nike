@@ -3,7 +3,7 @@
 import React from 'react';
 import { Card } from '.';
 import { useCartStore } from '../lib/store/cart';
-import type { UiProduct as Product } from '../lib/data/products';
+import type { UiProduct as Product } from '../lib/utils/sneaksTransform';
 import Modal from './Modal';
 import Image from 'next/image';
 

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { CategoryPage } from '../../components';
+import CategoryPage from '../../components/CategoryPage';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import { getProductsByType } from '@/lib/data/products';
-import { fetchSneaksProducts } from '@/lib/external/sneaksFetch';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +11,7 @@ export async function GET(req: NextRequest) {
   if (type) {
     products = await getProductsByType(type);
   } else {
-    products = await fetchSneaksProducts('new-arrivals');
+    products = await getProductsByType('new-arrivals');
   }
 
   return Response.json({
