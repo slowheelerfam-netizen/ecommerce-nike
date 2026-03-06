@@ -2,49 +2,16 @@ import 'server-only';
 
 export const runtime = 'nodejs';
 
+const KICKS_API_KEY = process.env.KICKSDB_API_KEY || '';
+const KICKS_BASE = 'https://api.kicks.dev/v3';
+
 type SneaksProduct = any;
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
 
 declare global {
   // eslint-disable-next-line no-var
-  var __sneaksInstance: any | undefined;
-  // eslint-disable-next-line no-var
   var __sneaksCache: Map<string, { ts: number; data: any }>;
-  // eslint-disable-next-line no-var
-  var __SneaksCtor: any;
-}
-
-function createSneaks() {
-  if (!global.__SneaksCtor) {
-    // PREVENT OverwriteModelError
-    // sneaks-api requires 'mongoose' and calls mongoose.model('Sneaker', ...) at top level.
-    // We must check if the model already exists and, if so, we can try to prevent re-compilation
-    // OR just rely on the fact that we are inside a function.
-    // However, require() caches the module, so the side effect should only happen once per process.
-    // The issue is if multiple versions of mongoose are loaded or if next.js reloads the module.
-    
-    // We can try to proactively load mongoose and check models.
-    try {
-      const mongoose = require('mongoose');
-      if (mongoose.models && mongoose.models.Sneaker) {
-         // Model already exists. 
-         // If we require('sneaks-api'), it will try to define it again and crash if it's the same mongoose instance.
-         // But if 'sneaks-api' requires its own mongoose, it might be different.
-         // Usually it's the same if versions match.
-         
-         // If we delete the model, it might allow re-definition.
-         delete mongoose.models.Sneaker;
-         delete mongoose.modelSchemas.Sneaker;
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    global.__SneaksCtor = require('sneaks-api');
-  }
-  if (!global.__sneaksInstance) {
-    global.__sneaksInstance = new global.__SneaksCtor();
-  }
-  return global.__sneaksInstance;
 }
 
 function getCacheKey(op: string, params: Record<string, string | number>) {
@@ -59,7 +26,7 @@ function getFromCache(key: string) {
   if (!global.__sneaksCache) global.__sneaksCache = new Map();
   const item = global.__sneaksCache.get(key);
   if (!item) return null;
-  const ttl = 1000 * 60 * 5; // 5 minutes cache
+  const ttl = 1000 * 60 * 5; // 5 minutes
   if (Date.now() - item.ts > ttl) {
     global.__sneaksCache.delete(key);
     return null;
@@ -72,56 +39,120 @@ function setCache(key: string, data: any) {
   global.__sneaksCache.set(key, { ts: Date.now(), data });
 }
 
-export function getProducts(keyword: string, limit: number): Promise<SneaksProduct[]> {
-  const sneaks = createSneaks();
+// ─── KicksDB fetch helper ─────────────────────────────────────────────────────
+
+async function kicksFetch(path: string): Promise<any> {
+  const res = await fetch(`${KICKS_BASE}${path}`, {
+    headers: {
+      Authorization: `Bearer ${KICKS_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    next: { revalidate: 300 }, // 5 min Next.js cache
+  });
+  if (!res.ok) throw new Error(`KicksDB ${res.status}: ${path}`);
+  return res.json();
+}
+
+// ─── Map KicksDB product → shape the rest of the app expects ─────────────────
+
+function mapProduct(item: any): SneaksProduct {
+  return {
+    shoeName:      item.title   ?? item.name ?? 'Unknown',
+    brand:         item.brand   ?? '',
+    colorway:      item.colorway ?? '',
+    styleID:       item.style_id ?? item.sku ?? item.id ?? '',
+    retailPrice:   item.retail_price ?? item.msrp ?? 0,
+    thumbnail:     item.image   ?? (item.images?.[0]) ?? '',
+    releaseDate:   item.release_date ?? '',
+    description:   item.description ?? '',
+    urlKey:        item.slug    ?? item.url_key ?? '',
+    make:          item.model   ?? '',
+    silhoutte:     item.model   ?? '',
+    lowestResellPrice: {
+      stockX:        item.lowest_ask ?? item.price ?? 0,
+      goat:          0,
+      flightClub:    0,
+      stadiumGoods:  0,
+    },
+    resellLinks: {
+      stockX:        item.slug ? `https://stockx.com/${item.slug}` : '',
+      goat:          '',
+      flightClub:    '',
+      stadiumGoods:  '',
+    },
+    resellPrices: {
+      stockX:        {},
+      goat:          {},
+      flightClub:    {},
+      stadiumGoods:  {},
+    },
+    imageLinks: item.images ?? (item.image ? [item.image] : []),
+  };
+}
+
+// ─── Public API (same signatures as the old sneaksDirect.ts) ─────────────────
+
+export async function getProducts(keyword: string, limit: number): Promise<SneaksProduct[]> {
   const key = getCacheKey('search', { keyword, limit });
   const cached = getFromCache(key);
-  if (cached) return Promise.resolve(cached);
-  return new Promise((resolve) => {
-    sneaks.getProducts(keyword, limit, (err: unknown, products: SneaksProduct[]) => {
-      if (err) {
-        resolve([]);
-        return;
-      }
-      const data = products || [];
-      setCache(key, data);
-      resolve(data);
-    });
-  });
+  if (cached) return cached;
+
+  try {
+    // KicksDB unified search endpoint
+    const json = await kicksFetch(
+      `/stockx/products?query=${encodeURIComponent(keyword)}&limit=${limit}`
+    );
+    const items: any[] = json.data ?? [];
+    const data = items.slice(0, limit).map(mapProduct);
+    setCache(key, data);
+    return data;
+  } catch (err) {
+    console.error('[sneaksDirect] getProducts error:', err);
+    return [];
+  }
 }
 
-export function getProductPrices(styleID: string): Promise<SneaksProduct> {
-  const sneaks = createSneaks();
+export async function getProductPrices(styleID: string): Promise<SneaksProduct> {
   const key = getCacheKey('prices', { styleID });
   const cached = getFromCache(key);
-  if (cached) return Promise.resolve(cached);
-  return new Promise((resolve) => {
-    sneaks.getProductPrices(styleID, (err: unknown, product: SneaksProduct) => {
-      if (err) {
-        resolve({});
-        return;
+  if (cached) return cached;
+
+  try {
+    const json = await kicksFetch(`/stockx/products/${encodeURIComponent(styleID)}`);
+    const item = json.data ?? {};
+    const product = mapProduct(item);
+
+    // Build size → price map from variants if available
+    if (Array.isArray(item.variants)) {
+      const priceMap: Record<string, number> = {};
+      for (const v of item.variants) {
+        if (v.size && v.lowest_ask) priceMap[v.size] = v.lowest_ask;
       }
-      const data = product || {};
-      setCache(key, data);
-      resolve(data);
-    });
-  });
+      product.resellPrices.stockX = priceMap;
+    }
+
+    setCache(key, product);
+    return product;
+  } catch (err) {
+    console.error('[sneaksDirect] getProductPrices error:', err);
+    return {};
+  }
 }
 
-export function getMostPopular(limit: number): Promise<SneaksProduct[]> {
-  const sneaks = createSneaks();
+export async function getMostPopular(limit: number): Promise<SneaksProduct[]> {
   const key = getCacheKey('popular', { limit });
   const cached = getFromCache(key);
-  if (cached) return Promise.resolve(cached);
-  return new Promise((resolve) => {
-    sneaks.getMostPopular(limit, (err: unknown, products: SneaksProduct[]) => {
-      if (err) {
-        resolve([]);
-        return;
-      }
-      const data = products || [];
-      setCache(key, data);
-      resolve(data);
-    });
-  });
+  if (cached) return cached;
+
+  try {
+    // Use a broad Nike search as a "popular" proxy — KicksDB has no dedicated popular endpoint
+    const json = await kicksFetch(`/stockx/products?query=nike&limit=${limit}`);
+    const items: any[] = json.data ?? [];
+    const data = items.slice(0, limit).map(mapProduct);
+    setCache(key, data);
+    return data;
+  } catch (err) {
+    console.error('[sneaksDirect] getMostPopular error:', err);
+    return [];
+  }
 }
