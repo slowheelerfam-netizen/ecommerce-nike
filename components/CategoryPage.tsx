@@ -1,5 +1,9 @@
+'use client';
+
+import React from 'react';
 import { CategoryGrid, PageLayout } from '.';
-import { getProductsByType } from '@/lib/data/products';
+import { fetchSneaksProducts } from '@/lib/external/sneaksFetch';
+import type { UiProduct } from '@/lib/utils/sneaksTransform';
 
 type CategoryType = 'men' | 'women' | 'kids' | 'sale' | 'new-arrivals';
 
@@ -9,12 +13,51 @@ type CategoryPageProps = {
   description: string;
 };
 
-export default async function CategoryPage({ type, title, description }: CategoryPageProps) {
-  const products = await getProductsByType(type);
+function CategorySkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-17 sm:gap-21">
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div key={i} className="border border-light-200 rounded-xl p-4 animate-pulse">
+          <div className="w-full h-48 bg-light-200 rounded-lg" />
+          <div className="mt-4 space-y-2">
+            <div className="h-4 bg-light-200 rounded w-3/4" />
+            <div className="h-3 bg-light-200 rounded w-1/2" />
+            <div className="h-5 bg-light-200 rounded w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function CategoryPage({ type, title, description }: CategoryPageProps) {
+  const [products, setProducts] = React.useState<UiProduct[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    fetchSneaksProducts(type)
+      .then((data) => {
+        if (mounted) {
+          setProducts(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setProducts([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, [type]);
 
   return (
     <PageLayout title={title} description={description}>
-      {products.length > 0 ? (
+      {loading ? (
+        <CategorySkeleton />
+      ) : products.length > 0 ? (
         <CategoryGrid products={products} toastFromModalOnly />
       ) : (
         <div className="text-center text-dark-700">

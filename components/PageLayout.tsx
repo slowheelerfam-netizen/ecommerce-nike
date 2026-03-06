@@ -1,5 +1,3 @@
-'use client';
-
 type PageLayoutProps = {
   title: string;
   description?: string;
